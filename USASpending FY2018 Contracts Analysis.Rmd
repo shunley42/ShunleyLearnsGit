@@ -1,0 +1,148 @@
+---
+title: "Analysis of Top Recipients of Federal Contracts in FY18"
+author: "Sam Hunley"
+date: "10/13/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Making Sense of USASpending Contracts Data
+
+Contract data from <https://www.USASpending.gov> can be overwhelming to parse through. Each year contains millions of rows and hundreds of columns of data, making it difficult for anyone to dive into at first. To make it a bit easier, I wanted to run through a simple analysis I conducted using contracts data from FY18
+
+# A Couple Notes
+The first question that might come to mind is - why am I looking at FY2018 data when we just kicked off FY2020? Aren't the data a bit dated? My decision was based on the fact that I wanted a **complete** year of data. FY2019 has ended, but it's not completely in the books (i.e., folks are still logging changes), so I will hold off on using that data for a few more weeks.
+
+Throughout this post, I will be referring exclusively to Federal "obligations", which is a strange term for those who aren't familiar with Federal finances. In short, an obligation is a binding agreement in which the Federal government has agreed to pay money, which is close enough to actual spending for my purposes. If you want a more (perhaps overly) detailed explanation, you can check out this post here: <https://fedspendingtransparency.github.io/whitepapers/obligation/> 
+
+
+## Loading the Data
+Before getting into the fun stuff, let's load the data. For this analysis, everything you need can be found in the USASpending Award Archives <https://www.usaspending.gov/#/download_center/award_data_archive>. Just select "Contracts" and "2018", and a zip file will download. As a heads-up, the contract archives for each year are fairly large. The zip file weighs in at 918 MB, and once unzipped, the CSVs total up to around 10 GB or so. I was able to run all of the code below using a 2017 MacBook with 8 GB of RAM, but it took a minute and crashed out a couple times. 
+
+
+```{r loading packages and data, eval=FALSE}
+library(tidyverse)
+library(vroom)
+
+# Create Working Directory Short Cuts
+local_dir <- "/Users/samhunley/Desktop/2018_all_Contracts_Full_20191009" # Your folder location here
+setwd(local_dir)
+
+
+# Loading that data
+# vroom is fun, loads multiple csvs at once. "files" stores the file names to do this
+
+files <- fs::dir_ls(glob = "2018_all_Contracts_Full_20191010_*csv")
+contracts18 <- vroom(files, delim = ",", col_select = c(award_id_piid, award_description, 
+                                                        product_or_service_code_description, action_date, 
+                                                        naics_description, awarding_agency_name, 
+                                                        awarding_sub_agency_name, recipient_name, 
+                                                        recipient_country_name, recipient_state_name, 
+                                                        recipient_city_name, 
+                                                        federal_action_obligation))
+```
+
+## Compressing and Formatting the data
+Given the large files involved, I recommend compressing the data into a smaller format by summarizing down to only the information we care about. 
+
+```{r compressing the data, eval=FALSE}
+# Compressing the data by summarizing
+contracts18 <- contracts18 %>% 
+  group_by(recipient_name, product_or_service_code_description, naics_description, awarding_agency_name, 
+           awarding_sub_agency_name) %>% 
+  summarise(fundsObligated = sum(federal_action_obligation))
+```
+
+## Beginning the Analysis
+I wanted to see the top recipients of contract funding in FY2018. So the first thing I did was summarize funds obligated according to recipient names. I used the following code to produce an ordered list of contract recipients according to obligations. I have typed out the top 10 below the code.
+
+```{r creating an ordered list of recipients, eval=FALSE}
+# Simple approach to summarizing according to recipients
+# Note - I opted to remove entries with obligations of 0 or less (deobligations)
+vendors <- contracts18 %>% 
+  group_by(recipient_name) %>% 
+  summarise(fundsObligated = sum(fundsObligated)) %>% 
+  filter(fundsObligated > 0) %>% 
+  arrange(desc(fundsObligated))
+```
+
+# Top 10 Recipients of Federal Contracts in FY2018
+1. Lockheed Martin: $36.7B
+2. Boeing*: $28.0B
+3. Raytheon: $17.0B
+4. Northrop Grumman: $9.5B
+5. McKesson: $8.9B
+6. Huntington Ingalls Industries: $7.0B
+7. GD Electric Boat: $5.7B
+8. United Technologies: $5.4B
+9. Booz Allen Hamilton: $4.1B
+10. Humana: $4.1B
+
+\* *A note on Boeing: When you run the code yourself, you will see that Boeing is actually listed twice, once under "The Boeing Company" and again as "Boeing Company, The". This is a common issue in the contracts data. I've adjusted for it in the Top 10 above*
+
+## Looking more into Lockheed Martin
+Now, I can vaguely tell that there’s a significant amount of defense and health related spending involved, but I want to know specifics. To get a better sense of what this money is being spent on, I’m going to pick on Lockheed Martin because they are at the top of the list.
+
+You can breakdown contract spending according to a variety of criteria. Personally, my first question is which agencies are paying Lockheed Martin? See below the code for a summary
+
+```{r looking at lockheed martin, eval=FALSE}
+# Filtering to look at just LOCKHEED MARTIN CORPORATION 
+lockheed <- contracts18 %>% 
+  filter(recipient_name == "LOCKHEED MARTIN CORPORATION")
+
+# Summarizing by funding agencies
+agencies <- lockheed %>% 
+  group_by(awarding_agency_name) %>% 
+  summarise(fundsObligated = sum(fundsObligated)) %>% 
+  filter(fundsObligated > 0) %>% 
+  arrange(desc(fundsObligated))
+```
+# Agencies Contracts to Lockheed Martin in FY18
+1. Department of Defense: $35,219,980,889
+2. NASA: $1,268,964,214
+3. Department of Transportation: $111,747,754
+4. General Services Administration: $69,696,297
+5. Homeland Security: $40,203,136
+6. Social Security: $1,924,246
+7. The Justice Department:$308,650
+
+## One of These is not like the others!
+Seriously, Social Security paid almost $2 million to Lockheed Martin? WHY? 
+
+To get this answer, we can look at the North American Industry Categorization System codes and Product or Service Codes. The code below pulls that out, but when you do that, you can see that the contract(s) were for uncategorized IT or telecommunication needs, which, admittedly, isn’t super helpful in understanding what's going on.
+
+```{r looking at just social security administration, eval=FALSE}
+ssa <- lockheed %>% 
+  filter(awarding_agency_name == "SOCIAL SECURITY ADMINISTRATION (SSA)")
+
+# NAICs
+ssa %>% 
+  group_by(naics_description) %>% 
+  summarise(fundsObligated = sum(fundsObligated))
+
+# PSCs
+ssa %>% 
+  group_by(product_or_service_code_description) %>% 
+  summarise(fundsObligated = sum(fundsObligated)) %>% 
+  arrange(desc(fundsObligated))
+```
+
+## Digging Deeper
+To get more details, one would have to track down the specific contract(s) associated with this spending. This requires reloading the big dataset and then searching for SSA and Lockheed Martin. In the data I have there are 2 entries and 1 unique award associated with Social Security and Lockheed Martin, labelled with the ID # 28321318FDS030006.
+
+Using USAspending’s Advanced Search, I looked for this award, and I found… a contract to Leidos Innovations?? The plot thickens! <https://www.usaspending.gov/#/award/6385598>
+
+## What might be happening here?
+
+Searching for the contract on <https://wwwFPDS.gov> (where USAspending gets its contract data), I found 3 entries for this contract, 2 actions going to Lockheed Martin and 1 going to Leidos. Based on my knowledge, I would say that there are a 3 possibilities for what’s going on here.
+
+1. Perhaps the award was given to *both* Lockheed Martin and Leidos.
+2. Maybe the award was initially given to LockheedMartin, but then later transferred to Leidos for unknown reasons
+or - my favorite possibility - 
+3. This is all the result of a typo! Lockheed Martin never received this award, and it was intended for Leidos, an actual tech company.
+
+## It Remains a Mystery for Now!
+As much as I would love to solve this mystery, my trail has run cold at this point. So I am calling it quits. However, this is an example of the sort of information you can dig into using USASpending data.
