@@ -10,7 +10,9 @@ setwd(local_dir)
 
 # Loading that data
 # vroom is fun, loads multiple csvs at once
-# The data are the 2019 contracts archive from USAspending.gov
+# The data are the 2018 contracts archive from https://www.usaspending.gov/#/download_center/award_data_archive
+
+# Quick warning! This is about 7 GB of data!
 files <- fs::dir_ls(glob = "2018_all_Contracts_Full_20191010_*csv")
 contracts18 <- vroom(files, delim = ",", col_select = c(award_id_piid, award_description, 
                                                         product_or_service_code_description, action_date, 
@@ -28,21 +30,21 @@ contracts18 <- vroom(files, delim = ",", col_select = c(award_id_piid, award_des
 lockSSAcontracts <- contracts18 %>% 
   filter(awarding_agency_name == "SOCIAL SECURITY ADMINISTRATION (SSA)" &
            recipient_name == "LOCKHEED MARTIN CORPORATION")
-rm(contracts18)
 
+# saving to CSV just to make it easier to browse
 write_csv(lockSSAcontracts, "lockheedSSAContracts.csv")
 #####
 #
 #####
 
-# Smooshing it donw
+# Compressing the data by summarizing
 contracts18 <- contracts18 %>% 
   group_by(recipient_name, product_or_service_code_description, naics_description, awarding_agency_name, 
            awarding_sub_agency_name) %>% 
   summarise(fundsObligated = sum(federal_action_obligation))
 
 
-# Saving this shit as an RData file to save me time later
+# Saving the smaller dataset as an RData file to save time loading later
 
 saveRDS(contracts18, "contracts18.RData")
 
